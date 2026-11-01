@@ -2,7 +2,7 @@
   "id": "com.gravitydock.images",
   "name": "Images",
   "version": "1.0.0",
-  "description": "Read, transform, analyze and export raster images, including FITS.",
+  "description": "Read, transform, analyze, compose, and export raster images and vector SVG graphics, including FITS.",
   "main": "dist/index.js",
   "permissions": ["fs:read", "fs:write"],
   "ioTypes": [

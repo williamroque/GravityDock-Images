@@ -20,6 +20,13 @@ import { GaussianBlurNode } from './nodes/filter/GaussianBlurNode';
 import { ImageMathNode } from './nodes/math/ImageMathNode';
 import { FITSHeaderNode } from './nodes/fits/FITSHeaderNode';
 import { FITSTableNode } from './nodes/fits/FITSTableNode';
+import { ReadSvgNode } from './nodes/svg/ReadSvgNode';
+import { WriteSvgNode } from './nodes/svg/WriteSvgNode';
+import { SvgInfoNode } from './nodes/svg/SvgInfoNode';
+import { ImageToSvgNode } from './nodes/svg/ImageToSvgNode';
+import { ComposeSvgNode } from './nodes/svg/ComposeSvgNode';
+import { TransformSvgNode } from './nodes/svg/TransformSvgNode';
+import { RenderSvgNode } from './nodes/svg/RenderSvgNode';
 
 import { ImageThemeSections } from './themes';
 
@@ -46,7 +53,14 @@ const nodes = [
     new GaussianBlurNode(),
     new ImageMathNode(),
     new FITSHeaderNode(),
-    new FITSTableNode()
+    new FITSTableNode(),
+    new ReadSvgNode(),
+    new WriteSvgNode(),
+    new SvgInfoNode(),
+    new ImageToSvgNode(),
+    new ComposeSvgNode(),
+    new TransformSvgNode(),
+    new RenderSvgNode()
 ];
 
 const serializableNodes = nodes.map(n => ({
