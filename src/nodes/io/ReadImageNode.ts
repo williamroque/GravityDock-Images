@@ -15,12 +15,13 @@ export class ReadImageNode extends ExecuteNode {
     readonly visible = true;
 
     readonly inputs: InputDefinition[] = [
-        { name: 'Path', acceptsType: 'core:path' }
+        { name: 'Path', acceptsType: ['core:path', 'core:string'] }
     ];
 
     readonly outputs: OutputDefinition[] = [
         { name: 'Image', outputType: 'images:image' },
         { name: 'Frames', outputType: 'images:image-array' },
+        { name: 'Path', outputType: 'core:path' },
         { name: 'Info', outputType: 'core:dataframe' }
     ];
 
@@ -42,21 +43,53 @@ export class ReadImageNode extends ExecuteNode {
         }
     ];
 
+    private async readSingle(filePath: string, requestedFrame: number) {
+        const bytes = await readBytes(filePath);
+        const decoded = await decodeFile(bytes, { path: filePath });
+        const requested = Math.floor(requestedFrame || 0);
+        const index = Math.min(Math.max(requested, 0), decoded.images.length - 1);
+        const image = decoded.images[index];
+        image.meta.source = { ...image.meta.source, format: image.meta.source?.format ?? 'unknown', path: filePath, frame: index };
+        return { image, decoded };
+    }
+
     async evaluate(inputs: Record<string, any>, properties: Record<string, any>): Promise<Record<string, any>> {
-        const path = (inputs['Path'] as string) || (properties['filePath'] as string);
-        if (!path) return {};
+        const rawPath = inputs['Path'] ?? properties['filePath'];
+        if (!rawPath) return {};
 
+        const frameProp = Number(properties['frame']) || 0;
+
+        if (Array.isArray(rawPath)) {
+            const paths = rawPath.map(p => String(p)).filter(Boolean);
+            if (paths.length === 0) return {};
+            try {
+                const results = await Promise.all(paths.map(p => this.readSingle(p, frameProp)));
+                const images = results.map(r => r.image);
+                const frames = results.map(r => r.decoded.images);
+                const first = results[0];
+                return {
+                    Image: images,
+                    Frames: frames,
+                    Path: paths,
+                    Info: recordToTable({
+                        count: images.length,
+                        ...first?.decoded.info,
+                        ...describeImage(images[0])
+                    })
+                };
+            } catch (err) {
+                console.error('Failed to read images:', err);
+                return { Info: errorTable(err) };
+            }
+        }
+
+        const path = String(rawPath);
         try {
-            const bytes = await readBytes(path);
-            const decoded = await decodeFile(bytes, { path });
-            const requested = Math.floor(Number(properties['frame']) || 0);
-            const index = Math.min(Math.max(requested, 0), decoded.images.length - 1);
-            const image = decoded.images[index];
-            image.meta.source = { ...image.meta.source, format: image.meta.source?.format ?? 'unknown', path, frame: index };
-
+            const { image, decoded } = await this.readSingle(path, frameProp);
             return {
                 Image: image,
                 Frames: decoded.images,
+                Path: path,
                 Info: recordToTable({ ...decoded.info, frames: decoded.images.length, ...describeImage(image) })
             };
         } catch (err) {

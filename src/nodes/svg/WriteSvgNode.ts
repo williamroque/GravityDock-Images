@@ -13,7 +13,7 @@ export class WriteSvgNode extends ExecuteNode {
 
     readonly inputs: InputDefinition[] = [
         { name: 'SVG', acceptsType: ['core:svg', 'svg', 'render', 'core:render', 'core:string', 'string'] },
-        { name: 'Path', acceptsType: 'core:path' }
+        { name: 'Path', acceptsType: ['core:path', 'core:string'] }
     ];
 
     readonly outputs: OutputDefinition[] = [

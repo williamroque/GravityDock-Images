@@ -12,13 +12,14 @@ export class ReadSvgNode extends ExecuteNode {
     readonly visible = true;
 
     readonly inputs: InputDefinition[] = [
-        { name: 'Path', acceptsType: 'core:path' }
+        { name: 'Path', acceptsType: ['core:path', 'core:string'] }
     ];
 
     readonly outputs: OutputDefinition[] = [
         { name: 'SVG', outputType: 'core:svg' },
         { name: 'Render', outputType: 'render' },
         { name: 'Content', outputType: 'core:string' },
+        { name: 'Path', outputType: 'core:path' },
         { name: 'Info', outputType: 'core:dataframe' }
     ];
 
@@ -52,6 +53,7 @@ export class ReadSvgNode extends ExecuteNode {
                 SVG: renderData,
                 Render: renderData,
                 Content: content,
+                Path: path,
                 Info: recordToTable({
                     status: 'ok',
                     path,

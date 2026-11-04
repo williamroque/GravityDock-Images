@@ -12,7 +12,7 @@ export class ShowImageNode extends RenderNode {
     readonly visible = true;
 
     readonly inputs: InputDefinition[] = [
-        { name: 'Image', acceptsType: 'images:image' }
+        { name: 'Image', acceptsType: ['images:image', 'images:image-array'] }
     ];
 
     readonly outputs: OutputDefinition[] = [
@@ -78,11 +78,17 @@ export class ShowImageNode extends RenderNode {
             type: 'boolean',
             defaultValue: false
         },
-        { name: 'maxDim', label: 'Max display size (px)', type: 'number', defaultValue: 1024, min: 64, step: 64 }
+        { name: 'maxDim', label: 'Max display size (px)', type: 'number', defaultValue: 1024, min: 64, step: 64 },
+        { name: 'frame', label: 'Frame / Index', type: 'number', defaultValue: 0, min: 0, step: 1 }
     ];
 
     async evaluate(inputs: Record<string, any>, properties: Record<string, any>): Promise<Record<string, any>> {
-        const image = inputs['Image'];
+        let image = inputs['Image'];
+        if (Array.isArray(image)) {
+            const requested = Math.floor(Number(properties['frame']) || 0);
+            const index = Math.min(Math.max(requested, 0), image.length - 1);
+            image = image[index];
+        }
         if (!isImage(image)) return {};
 
         const content = renderImageSvg(image, {
