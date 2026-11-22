@@ -1,8 +1,10 @@
 import { decode, encode } from 'fast-png';
+import { decodeNativeImage } from '../io/files';
 import { createImage, modelForChannels, type PixelBuffer, type TRImage } from '../model/image';
 import { assertPixelLimit } from '../runtime';
 import { decodeWithBrowser } from './browser';
-import type { DecodedFile, EncodeOptions, ImageCodec } from './registry';
+import { repairPngStructure, salvagePartialPng } from './recovery';
+import type { DecodeOptions, DecodedFile, EncodeOptions, ImageCodec } from './registry';
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -23,7 +25,7 @@ function expandPalette(png: any): { data: Uint8Array; channels: number } {
     return { data, channels };
 }
 
-function decodePng(bytes: Uint8Array): DecodedFile {
+export function decodePng(bytes: Uint8Array): DecodedFile {
     const png: any = decode(bytes);
     assertPixelLimit(png.width, png.height);
 
@@ -75,13 +77,68 @@ export const pngCodec: ImageCodec = {
         lossless: true
     },
     sniff: (head) => PNG_MAGIC.every((b, i) => head[i] === b),
-    decode: async (bytes) => {
+    decode: async (bytes: Uint8Array, options: DecodeOptions) => {
+        let primaryErr: unknown;
         try {
             return decodePng(bytes);
         } catch (err) {
-            console.warn('PNG decoder failed, falling back to the browser decoder:', err);
-            return decodeWithBrowser(bytes, 'image/png', 'png');
+            primaryErr = err;
+            console.warn('PNG decoder failed, attempting recovery:', err);
         }
+
+        try {
+            return await decodeWithBrowser(bytes, 'image/png', 'png');
+        } catch {
+            // Continue to structural repair
+        }
+
+        const repaired = repairPngStructure(bytes);
+        if (repaired) {
+            try {
+                const decoded = decodePng(repaired);
+                decoded.info = { ...decoded.info, recovered: true, recoveryMethod: 'png-repair' };
+                for (const img of decoded.images) img.meta.history.push('Repaired PNG chunk structure/CRCs');
+                return decoded;
+            } catch {
+                // Fall through to browser decode on repaired PNG
+            }
+            try {
+                const decoded = await decodeWithBrowser(repaired, 'image/png', 'png');
+                decoded.info = { ...decoded.info, recovered: true, recoveryMethod: 'png-repair-browser' };
+                for (const img of decoded.images) img.meta.history.push('Repaired PNG chunk structure/CRCs');
+                return decoded;
+            } catch {
+                // Continue to native and partial scanline salvage
+            }
+        }
+
+        const nativePng = await decodeNativeImage(repaired ?? bytes, { path: options.path, extension: 'png' });
+        if (nativePng) {
+            try {
+                const decoded = decodePng(nativePng);
+                decoded.info = { ...decoded.info, recovered: true, recoveryMethod: 'native' };
+                for (const img of decoded.images) img.meta.history.push('Recovered PNG via native host decoder');
+                return decoded;
+            } catch {
+                // Continue to partial IDAT salvage
+            }
+        }
+
+        const salvaged = salvagePartialPng(bytes);
+        if (salvaged) {
+            return {
+                images: [salvaged],
+                labels: ['Image'],
+                info: {
+                    format: 'png',
+                    bitDepth: salvaged.dtype === 'uint16' ? 16 : 8,
+                    recovered: true,
+                    recoveryMethod: 'png-partial-idat'
+                }
+            };
+        }
+
+        throw primaryErr instanceof Error ? primaryErr : new Error(String(primaryErr ?? 'Failed to decode PNG.'));
     },
     encode: async (images: TRImage[], _options: EncodeOptions) => {
         if (images.length !== 1) throw new Error('PNG stores a single image.');

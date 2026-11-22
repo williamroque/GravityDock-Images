@@ -6,7 +6,10 @@ import { errorTable, recordToTable } from '../../interop/dataframe';
 import { readBytes } from '../../io/files';
 import { describeImage } from '../../model/image';
 
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'fits', 'fit', 'fts', 'gz'];
+const IMAGE_EXTENSIONS = [
+    'png', 'jpg', 'jpeg', 'jpe', 'jfif', 'webp', 'gif', 'bmp', 'avif',
+    'heic', 'heif', 'hif', 'tif', 'tiff', 'fits', 'fit', 'fts', 'gz'
+];
 
 export class ReadImageNode extends ExecuteNode {
     readonly typeId = 'images.read';
@@ -50,7 +53,7 @@ export class ReadImageNode extends ExecuteNode {
         const index = Math.min(Math.max(requested, 0), decoded.images.length - 1);
         const image = decoded.images[index];
         image.meta.source = { ...image.meta.source, format: image.meta.source?.format ?? 'unknown', path: filePath, frame: index };
-        return { image, decoded };
+        return { image, decoded, path: filePath };
     }
 
     async evaluate(inputs: Record<string, any>, properties: Record<string, any>): Promise<Record<string, any>> {
@@ -62,25 +65,45 @@ export class ReadImageNode extends ExecuteNode {
         if (Array.isArray(rawPath)) {
             const paths = rawPath.map(p => String(p)).filter(Boolean);
             if (paths.length === 0) return {};
-            try {
-                const results = await Promise.all(paths.map(p => this.readSingle(p, frameProp)));
-                const images = results.map(r => r.image);
-                const frames = results.map(r => r.decoded.images);
-                const first = results[0];
-                return {
-                    Image: images,
-                    Frames: frames,
-                    Path: paths,
-                    Info: recordToTable({
-                        count: images.length,
-                        ...first?.decoded.info,
-                        ...describeImage(images[0])
-                    })
-                };
-            } catch (err) {
-                console.error('Failed to read images:', err);
-                return { Info: errorTable(err) };
+
+            const settled = await Promise.allSettled(paths.map(p => this.readSingle(p, frameProp)));
+            const succeeded: Array<{ image: any; decoded: any; path: string }> = [];
+            const failed: Array<{ path: string; reason: string }> = [];
+
+            settled.forEach((res, idx) => {
+                if (res.status === 'fulfilled') {
+                    succeeded.push(res.value);
+                } else {
+                    const reason = res.reason instanceof Error ? res.reason.message : String(res.reason);
+                    failed.push({ path: paths[idx], reason });
+                    console.error(`Failed to read image '${paths[idx]}':`, res.reason);
+                }
+            });
+
+            if (succeeded.length === 0) {
+                return { Info: errorTable(failed[0]?.reason ?? 'Failed to read images.') };
             }
+
+            const images = succeeded.map(r => r.image);
+            const frames = succeeded.map(r => r.decoded.images);
+            const okPaths = succeeded.map(r => r.path);
+            const first = succeeded[0];
+            const info: Record<string, unknown> = {
+                count: images.length,
+                ...first.decoded.info,
+                ...describeImage(images[0])
+            };
+            if (failed.length > 0) {
+                info.failed = failed.length;
+                info.failedPaths = failed.map(f => f.path).join(', ');
+            }
+
+            return {
+                Image: images,
+                Frames: frames,
+                Path: okPaths,
+                Info: recordToTable(info)
+            };
         }
 
         const path = String(rawPath);
