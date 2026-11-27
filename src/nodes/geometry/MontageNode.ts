@@ -90,7 +90,9 @@ export class MontageNode extends BaseNode {
             outData[i + 3] = bgA;
         }
 
+        const progressFn = count > 4 ? (globalThis as any).gravityDock?.progress : undefined;
         for (let idx = 0; idx < count; idx++) {
+            if (typeof progressFn === 'function') progressFn(idx + 1, count);
             let img = imageList[idx];
             if (img.width > tileW || img.height > tileH) {
                 const scale = Math.min(tileW / img.width, tileH / img.height);
